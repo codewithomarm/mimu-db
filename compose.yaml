@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: mimu-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      API_DB_PASSWORD: ${API_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
+    volumes:
+      - mimu_postgres_data:/var/lib/postgresql/data
+      
+      # 1) Initialización base: orden alfabético dentro de docker-entrypoint-initdb.d
+      - ./database/init/00-create-runtime-role.sql:/docker-entrypoint-initdb.d/00-create-runtime-role.sql:ro
+      - ./database/init/01-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./database/init/02-grant-runtime-permissions.sql:/docker-entrypoint-initdb.d/02-grant-runtime-permissions.sql:ro
+
+      # 2) Catálogo RBAC: después del esquema y los permisos runtime
+      - ./database/migrations/V004__seed_rbac_catalog.sql:/docker-entrypoint-initdb.d/10-V004__seed_rbac_catalog.sql:ro
+
+      # 3) Datos demo: secuencia explícita
+      - ./database/seeds/00-demo-identity.sql:/docker-entrypoint-initdb.d/20-demo-identity.sql:ro
+      - ./database/seeds/01-demo-academic.sql:/docker-entrypoint-initdb.d/21-demo-academic.sql:ro
+      - ./database/seeds/02-demo-activity.sql:/docker-entrypoint-initdb.d/22-demo-activity.sql:ro
+      - ./database/seeds/03-demo-communications.sql:/docker-entrypoint-initdb.d/23-demo-communications.sql:ro
+
+      # 4) Validación al final; si falla, la inicialización debe considerarse fallida
+      - ./database/seeds/99-validate-demo-data.sql:/docker-entrypoint-initdb.d/99-validate-demo-data.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  pgadmin:
+    image: dpage/pgadmin4:9
+    container_name: mimu-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "127.0.0.1:${PGADMIN_PORT}:80"
+    volumes:
+      - mimu_pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  mimu_postgres_data:
+  mimu_pgadmin_data:
